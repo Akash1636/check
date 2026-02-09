@@ -1,0 +1,320 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>Dashboard - Database Connected</title>
+<link rel="stylesheet" href="dashboard.css">
+</head>
+<body>
+
+<div class="top-header">
+    <div class="header-inner">
+        <div class="LOGO"><img src="../assets/LOGO.png" height="65"></div>
+        <div class="nav-menu">
+            <a href="#" onclick="showSection('home')">Home</a>
+            <a href="#" onclick="showSection('courses')">Courses</a>
+            <a href="#" onclick="showSection('details')">Get Details</a>
+            <a href="#" onclick="logout()">Logout</a>
+            <span class="user-info" id="userInfo"></span>
+        </div>
+    </div>
+</div>
+
+<div class="main-content">
+    <div id="home" class="content-wrapper">
+        <h2>Welcome to Course Management System</h2>
+        <p>Connected to Database Backend</p>
+    </div>
+    
+    <div id="courses" class="content-wrapper" style="display:none;">
+        <h2>Courses</h2>
+        <button onclick="showSection('home')">Back</button>
+        <div id="adminControls" style="display:none;">
+            <button onclick="showAddCourse()">Add Course</button>
+            <button onclick="showUploadCourses()">Upload Excel</button>
+        </div>
+        <div id="coursesList"></div>
+    </div>
+    
+    <div id="addCourse" class="content-wrapper" style="display:none;">
+        <h2>Add Course</h2>
+        <button onclick="showSection('courses')">Back</button>
+        <form id="addCourseForm">
+            <input type="text" id="courseName" placeholder="Course Name" required>
+            <select id="courseCategory" required>
+                <option value="">Category</option>
+                <option value="Technical">Technical</option>
+                <option value="Non-Technical">Non-Technical</option>
+            </select>
+            <input type="text" id="instructor" placeholder="Instructor" required>
+            <textarea id="description" placeholder="Description" required></textarea>
+            <input type="number" id="limit" placeholder="Student Limit" value="0">
+            <input type="number" id="hours" placeholder="Hours" value="0">
+            <input type="number" id="minutes" placeholder="Minutes" value="0">
+            <textarea id="prerequisites" placeholder="Prerequisites"></textarea>
+            <button type="submit">Create</button>
+        </form>
+    </div>
+    
+    <div id="uploadCourses" class="content-wrapper" style="display:none;">
+        <h2>Upload Courses</h2>
+        <button onclick="showSection('courses')">Back</button>
+        <input type="file" id="courseFile" accept=".xlsx,.xls">
+        <button onclick="uploadCoursesExcel()">Upload</button>
+    </div>
+    
+    <div id="details" class="content-wrapper" style="display:none;">
+        <h2>Student Details</h2>
+        <button onclick="showSection('home')">Back</button>
+        <select id="deptFilter">
+            <option value="">Select Department</option>
+            <option value="All Departments">All Departments</option>
+            <option value="Computer Science">Computer Science</option>
+            <option value="Data Science">Data Science</option>
+        </select>
+        <select id="batchFilter">
+            <option value="">Select Batch</option>
+            <option value="All Batches">All Batches</option>
+            <option value="2021-2024">2021-2024</option>
+            <option value="2022-2025">2022-2025</option>
+        </select>
+        <button onclick="filterStudents()">View</button>
+        <button onclick="showUploadStudents()">Upload Excel</button>
+        <div id="studentsList"></div>
+    </div>
+    
+    <div id="uploadStudents" class="content-wrapper" style="display:none;">
+        <h2>Upload Students</h2>
+        <button onclick="showSection('details')">Back</button>
+        <input type="file" id="studentFile" accept=".xlsx,.xls">
+        <button onclick="uploadStudentsExcel()">Upload</button>
+    </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+<script src="api-config.js"></script>
+<script>
+let currentUser = null;
+let currentRole = null;
+
+function showSection(section) {
+    document.querySelectorAll('.content-wrapper').forEach(el => el.style.display = 'none');
+    document.getElementById(section).style.display = 'block';
+    
+    if (section === 'courses') loadCourses();
+    if (section === 'details' && currentRole === 'student') loadStudentProfile();
+}
+
+function showAddCourse() { showSection('addCourse'); }
+function showUploadCourses() { showSection('uploadCourses'); }
+function showUploadStudents() { showSection('uploadStudents'); }
+
+async function loadCourses() {
+    try {
+        const courses = await api.getCourses();
+        const html = courses.map(c => `
+            <div class="course-item">
+                <h3>${c.name}</h3>
+                <p><strong>Category:</strong> ${c.category}</p>
+                <p><strong>Instructor:</strong> ${c.instructor}</p>
+                <p>${c.description}</p>
+                ${currentRole === 'admin' ? `<button onclick="deleteCourseById(${c.id})">Delete</button>` : ''}
+                ${currentRole === 'student' ? `<button onclick="enrollInCourse(${c.id})">Enroll</button>` : ''}
+            </div>
+        `).join('');
+        document.getElementById('coursesList').innerHTML = html || '<p>No courses</p>';
+    } catch (e) {
+        alert('Error loading courses: ' + e.message);
+    }
+}
+
+async function deleteCourseById(id) {
+    if (confirm('Delete this course?')) {
+        try {
+            await api.deleteCourse(id);
+            loadCourses();
+        } catch (e) {
+            alert('Error: ' + e.message);
+        }
+    }
+}
+
+async function enrollInCourse(courseId) {
+    const dept = prompt('Enter Department:');
+    const batch = prompt('Enter Batch (e.g., 2021-2024):');
+    if (dept && batch) {
+        try {
+            await api.enroll(courseId, dept, batch);
+            alert('Enrolled successfully!');
+        } catch (e) {
+            alert('Error: ' + e.message);
+        }
+    }
+}
+
+async function filterStudents() {
+    const dept = document.getElementById('deptFilter').value;
+    const batch = document.getElementById('batchFilter').value;
+    if (!dept || !batch) return alert('Select both filters');
+    
+    try {
+        const response = await fetch(`http://localhost:5001/api/enrollments/by-dept-batch?department=${dept}&batch=${batch}`, {
+            headers: { 'Authorization': authToken }
+        });
+        const students = await response.json();
+        
+        const html = students.map(s => `
+            <div class="student-card">
+                <h3>${s.username} - ${s.department} (${s.batch})</h3>
+                <p><strong>Ongoing:</strong> ${s.ongoing.join(', ') || 'None'}</p>
+                <p><strong>Completed:</strong> ${s.completed.join(', ') || 'None'}</p>
+            </div>
+        `).join('');
+        document.getElementById('studentsList').innerHTML = html || '<p>No students</p>';
+    } catch (e) {
+        alert('Error: ' + e.message);
+    }
+}
+
+async function loadStudentProfile() {
+    try {
+        const enrollments = await api.getEnrollments(currentUser);
+        const ongoing = enrollments.filter(e => e.status === 'ongoing');
+        const completed = enrollments.filter(e => e.status === 'completed');
+        
+        document.getElementById('studentsList').innerHTML = `
+            <h3>Your Enrollments</h3>
+            <h4>Ongoing:</h4>
+            ${ongoing.map(e => `<p>${e.course}</p>`).join('') || '<p>None</p>'}
+            <h4>Completed:</h4>
+            ${completed.map(e => `<p>${e.course}</p>`).join('') || '<p>None</p>'}
+        `;
+    } catch (e) {
+        alert('Error: ' + e.message);
+    }
+}
+
+document.getElementById('addCourseForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    try {
+        await api.createCourse({
+            name: document.getElementById('courseName').value,
+            category: document.getElementById('courseCategory').value,
+            instructor: document.getElementById('instructor').value,
+            description: document.getElementById('description').value,
+            limit: document.getElementById('limit').value,
+            duration_hours: document.getElementById('hours').value,
+            duration_minutes: document.getElementById('minutes').value,
+            prerequisites: document.getElementById('prerequisites').value
+        });
+        alert('Course created!');
+        showSection('courses');
+    } catch (e) {
+        alert('Error: ' + e.message);
+    }
+});
+
+async function uploadCoursesExcel() {
+    const file = document.getElementById('courseFile').files[0];
+    if (!file) return alert('Select file');
+    
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+        const data = new Uint8Array(e.target.result);
+        const workbook = XLSX.read(data, {type: 'array'});
+        const sheet = workbook.Sheets[workbook.SheetNames[0]];
+        const json = XLSX.utils.sheet_to_json(sheet);
+        
+        const courses = json.map(row => ({
+            name: row.Name,
+            category: row.Category,
+            instructor: row.Instructor,
+            description: row.Description || '',
+            limit: row.Limit || 0,
+            duration_hours: row['Duration (hours)'] || 0,
+            duration_minutes: row['Duration (minutes)'] || 0,
+            prerequisites: row.Prerequisites || ''
+        }));
+        
+        try {
+            await fetch('http://localhost:5001/api/courses/bulk', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': authToken
+                },
+                body: JSON.stringify({ courses })
+            });
+            alert('Courses uploaded!');
+            showSection('courses');
+        } catch (e) {
+            alert('Error: ' + e.message);
+        }
+    };
+    reader.readAsArrayBuffer(file);
+}
+
+async function uploadStudentsExcel() {
+    const file = document.getElementById('studentFile').files[0];
+    if (!file) return alert('Select file');
+    
+    const reader = new FileReader();
+    reader.onload = async (e) => {
+        const data = new Uint8Array(e.target.result);
+        const workbook = XLSX.read(data, {type: 'array'});
+        const sheet = workbook.Sheets[workbook.SheetNames[0]];
+        const json = XLSX.utils.sheet_to_json(sheet);
+        
+        const students = json.map(row => ({
+            username: row.Username,
+            department: row.Department,
+            batch: row.Batch,
+            ongoing_courses: row['Course Ongoing'] ? row['Course Ongoing'].split(',').map(c => c.trim()) : [],
+            completed_courses: row['Course Completed'] && row['Course Completed'] !== 'None' ? row['Course Completed'].split(',').map(c => c.trim()) : []
+        }));
+        
+        try {
+            await fetch('http://localhost:5001/api/students/bulk', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': authToken
+                },
+                body: JSON.stringify({ students })
+            });
+            alert('Students uploaded!');
+            showSection('details');
+        } catch (e) {
+            alert('Error: ' + e.message);
+        }
+    };
+    reader.readAsArrayBuffer(file);
+}
+
+function logout() {
+    api.clearToken();
+    localStorage.clear();
+    window.location.href = 'index.html';
+}
+
+window.addEventListener('DOMContentLoaded', () => {
+    const loginType = localStorage.getItem('loginType');
+    const username = localStorage.getItem('username');
+    const token = localStorage.getItem('authToken');
+    
+    if (!loginType || !username || !token) {
+        window.location.href = 'index.html';
+        return;
+    }
+    
+    currentUser = username;
+    currentRole = loginType;
+    document.getElementById('userInfo').textContent = `Logged in as: ${username}`;
+    
+    if (loginType === 'admin') {
+        document.getElementById('adminControls').style.display = 'block';
+    }
+});
+</script>
+</body>
+</html>
