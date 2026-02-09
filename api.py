@@ -6,9 +6,11 @@ import jwt
 import datetime
 import secrets
 from functools import wraps
+DB_PATH = "course_system.db"
 
 app = Flask(__name__)
-app.config['SECRET_KEY'] = secrets.token_hex(32)
+import os  
+app.config['SECRET_KEY'] = os.environ.get("SECRET_KEY", "dev-secret-key")
 CORS(app)
 
 def init_db():
@@ -352,7 +354,10 @@ def bulk_create_students(current_user):
 def get_enrollments_by_dept_batch(current_user):
     dept = request.args.get('department', '')
     batch = request.args.get('batch', '')
-    conn = sqlite3.connect('course_system.db')
+    conn = DB_PATH = "course_system.db"
+
+sqlite3.connect(DB_PATH)
+
     c = conn.cursor()
     
     query = '''SELECT u.username, e.department, e.batch, c.name, e.status
@@ -391,5 +396,9 @@ def get_enrollments_by_dept_batch(current_user):
     
     return jsonify(list(students.values()))
 
+import os
+
 if __name__ == '__main__':
-    app.run(debug=True, port=5001)
+    port = int(os.environ.get("PORT", 10000))
+    app.run(host="0.0.0.0", port=port)
+
