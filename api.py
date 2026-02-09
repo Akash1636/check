@@ -14,7 +14,7 @@ app.config['SECRET_KEY'] = os.environ.get("SECRET_KEY", "dev-secret-key")
 CORS(app)
 
 def init_db():
-    conn = sqlite3.connect('course_system.db')
+    conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     
     c.execute('''CREATE TABLE IF NOT EXISTS users
@@ -64,7 +64,7 @@ def init_db():
 init_db()
 
 def log_action(user_id, action, details=''):
-    conn = sqlite3.connect('course_system.db')
+    conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     ip = request.remote_addr
     c.execute('INSERT INTO audit_logs (user_id, action, details, ip_address) VALUES (?, ?, ?, ?)',
@@ -97,7 +97,7 @@ def login():
     if not username or not password:
         return jsonify({'message': 'Username and password required'}), 400
     
-    conn = sqlite3.connect('course_system.db')
+    conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute('SELECT id, username, email, password, role FROM users WHERE username=?', (username,))
     user = c.fetchone()
@@ -134,7 +134,7 @@ def register():
     hashed = bcrypt.hashpw(password.encode(), bcrypt.gensalt()).decode()
     
     try:
-        conn = sqlite3.connect('course_system.db')
+        conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
         c.execute('INSERT INTO users (username, email, password, role) VALUES (?, ?, ?, ?)',
                   (username, email, hashed, role))
@@ -149,7 +149,7 @@ def register():
 # Course Management
 @app.route('/api/courses', methods=['GET'])
 def get_courses():
-    conn = sqlite3.connect('course_system.db')
+    conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute('SELECT * FROM courses')
     courses = c.fetchall()
@@ -165,7 +165,7 @@ def get_courses():
 @token_required
 def create_course(current_user):
     data = request.json
-    conn = sqlite3.connect('course_system.db')
+    conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute('''INSERT INTO courses (name, category, instructor, description, 
                  limit_students, duration_hours, duration_minutes, prerequisites)
@@ -186,7 +186,7 @@ def create_course(current_user):
 @token_required
 def update_course(current_user, course_id):
     data = request.json
-    conn = sqlite3.connect('course_system.db')
+    conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute('''UPDATE courses SET name=?, category=?, instructor=?, description=?,
                  limit_students=?, duration_hours=?, duration_minutes=?, prerequisites=?
@@ -201,7 +201,7 @@ def update_course(current_user, course_id):
 @app.route('/api/courses/<int:course_id>', methods=['DELETE'])
 @token_required
 def delete_course(current_user, course_id):
-    conn = sqlite3.connect('course_system.db')
+    conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute('DELETE FROM courses WHERE id=?', (course_id,))
     conn.commit()
@@ -213,7 +213,7 @@ def delete_course(current_user, course_id):
 @token_required
 def enroll_student(current_user):
     data = request.json
-    conn = sqlite3.connect('course_system.db')
+    conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     
     c.execute('SELECT id FROM users WHERE username=?', (current_user,))
@@ -233,7 +233,7 @@ def enroll_student(current_user):
 
 @app.route('/api/enrollments/<username>', methods=['GET'])
 def get_enrollments(username):
-    conn = sqlite3.connect('course_system.db')
+    conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute('''SELECT c.name, e.department, e.batch, e.enrolled_date, e.status
                  FROM enrollments e
@@ -252,7 +252,7 @@ def get_enrollments(username):
 @app.route('/api/stats', methods=['GET'])
 @token_required
 def get_stats(current_user):
-    conn = sqlite3.connect('course_system.db')
+    conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     
     c.execute('SELECT COUNT(*) FROM courses')
@@ -275,7 +275,7 @@ def get_stats(current_user):
 @app.route('/api/user/profile', methods=['GET'])
 @token_required
 def get_profile(current_user):
-    conn = sqlite3.connect('course_system.db')
+    conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     c.execute('SELECT id, username, email, role, created_at, last_login FROM users WHERE username=?', 
               (current_user,))
@@ -294,7 +294,7 @@ def get_profile(current_user):
 def bulk_create_courses(current_user):
     data = request.json
     courses = data.get('courses', [])
-    conn = sqlite3.connect('course_system.db')
+    conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     created = 0
     for course in courses:
@@ -317,7 +317,7 @@ def bulk_create_courses(current_user):
 def bulk_create_students(current_user):
     data = request.json
     students = data.get('students', [])
-    conn = sqlite3.connect('course_system.db')
+    conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
     created = 0
     for student in students:
@@ -354,30 +354,28 @@ def bulk_create_students(current_user):
 def get_enrollments_by_dept_batch(current_user):
     dept = request.args.get('department', '')
     batch = request.args.get('batch', '')
-    conn = DB_PATH = "course_system.db"
 
-sqlite3.connect(DB_PATH)
-
+    conn = sqlite3.connect(DB_PATH)
     c = conn.cursor()
-    
+
     query = '''SELECT u.username, e.department, e.batch, c.name, e.status
                FROM enrollments e
                JOIN users u ON e.student_id = u.id
                JOIN courses c ON e.course_id = c.id
                WHERE 1=1'''
     params = []
-    
+
     if dept and dept != 'All Departments':
         query += ' AND e.department = ?'
         params.append(dept)
     if batch and batch != 'All Batches':
         query += ' AND e.batch = ?'
         params.append(batch)
-    
+
     c.execute(query, params)
     results = c.fetchall()
     conn.close()
-    
+
     students = {}
     for row in results:
         username = row[0]
@@ -393,8 +391,9 @@ sqlite3.connect(DB_PATH)
             students[username]['ongoing'].append(row[3])
         else:
             students[username]['completed'].append(row[3])
-    
+
     return jsonify(list(students.values()))
+
 
 import os
 
